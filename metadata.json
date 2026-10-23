@@ -1,0 +1,8 @@
+{
+  "name": "Telegram ID Print Order Bot & Studio",
+  "description": "Telegram order bot and layout generator for ID cards with Normal, Reverse, Flip+Reverse orientations, customizable card sizing, gap margins, and 300 DPI print export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
