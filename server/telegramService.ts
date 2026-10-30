@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { LayoutSettings, OrientationMode, UserSession, BotActivityLog } from './types.js';
 import { DEFAULT_LAYOUT_SETTINGS, GAP_LEVELS, processBatchCards, processCardPair, detectCardSide } from './imageProcessor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const SESSIONS_DIR = path.join(__dirname, '../data/sessions');
+// Store session files in system tmpdir so tsx watch does not auto-restart server on session updates
+const SESSIONS_DIR = path.join(os.tmpdir(), 'orderbot_sessions');
 
 // Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
@@ -144,7 +146,31 @@ export class TelegramBotManager {
   public getSession(chatId: string | number): UserSession {
     const id = String(chatId);
     let session = this.sessions.get(id);
+
     if (!session) {
+      const filePath = this.getSessionFilePath(id);
+      if (fs.existsSync(filePath)) {
+        try {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          const data = JSON.parse(raw);
+          if (data && data.chatId) {
+            session = {
+              chatId: id,
+              language: data.language || 'am',
+              settings: data.settings || { ...DEFAULT_LAYOUT_SETTINGS },
+              fronts: (data.frontsBase64 || []).map((b: string) => Buffer.from(b, 'base64')),
+              backs: (data.backsBase64 || []).map((b: string) => Buffer.from(b, 'base64')),
+              createdAt: data.createdAt || Date.now(),
+              lastActive: Date.now()
+            };
+            this.sessions.set(id, session);
+            return session;
+          }
+        } catch (e) {
+          console.error('[Sessions] Error reloading session from disk:', e);
+        }
+      }
+
       session = {
         chatId: id,
         language: 'am',
@@ -492,19 +518,26 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
   }
 
   private async determineCardSide(buffer: Buffer, session: UserSession): Promise<'front' | 'back'> {
+    try {
+      const detected = await detectCardSide(buffer);
+      if (detected === 'back' && session.fronts.length > session.backs.length) {
+        return 'back';
+      }
+      if (detected === 'front' && session.fronts.length === session.backs.length) {
+        return 'front';
+      }
+      return detected;
+    } catch (e) {
+      // Fallback to alternating sequence logic
+    }
+
     const fCount = session.fronts.length;
     const bCount = session.backs.length;
 
-    // Rule 1: If 1 Front is waiting and 0 Backs exist for current ID,
-    // this 2nd uploaded image is expected to be BACK to complete the pair!
     if (fCount > bCount) {
       return 'back';
     }
-
-    // Rule 2: If fCount === bCount, user is starting a new card pair.
-    // Default to 'front' unless detectCardSide strongly identifies 'back'
-    const detected = await detectCardSide(buffer);
-    return detected;
+    return 'front';
   }
 
   private async handlePhotoUpload(chatId: string, user: string, photos: any[], session: UserSession) {
@@ -747,8 +780,10 @@ Choose print orientation:`;
   public async renderAndSendResult(chatId: string, orientation: OrientationMode, session: UserSession) {
     const count = Math.min(session.fronts.length, session.backs.length);
     if (count === 0) {
-      // If no cards uploaded, offer sample fallback
-      await this.promptOrientation(chatId, session);
+      const msg = session.language === 'am'
+        ? `ℹ️ የዚህ መታወቂያ ፕሪንት ተጠናቅቋል። አዲስ ለማተም እባክዎ አዲስ ፎቶ ይላኩ::`
+        : `ℹ️ Print already completed for this ID. Please send new photos to print another ID.`;
+      await this.callApi('sendMessage', { chat_id: chatId, text: msg });
       return;
     }
 

@@ -340,21 +340,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              onClick={handleToggleFormat}
-              className="py-2.5 px-4 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 rounded-xl text-xs font-medium text-white transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              📄 Format: {settings.format}
-            </button>
-            <button
-              onClick={handleCycleQuality}
-              className="py-2.5 px-4 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 rounded-xl text-xs font-medium text-white transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              📦 PDF Size: {settings.quality || 78}%
-            </button>
-          </div>
-
           <div className="grid grid-cols-1 gap-2 pt-1">
             <button
               onClick={() => triggerSave('Settings confirmed & saved')}
@@ -447,33 +432,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               onChange={(e) => setSettings(prev => ({ ...prev, topMarginPx: parseInt(e.target.value, 10) }))}
               className="w-full accent-cyan-500 bg-zinc-800"
             />
-          </div>
-
-          {/* PDF Compression / Quality */}
-          <div className="space-y-2 sm:col-span-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-zinc-400">
-                {lang === 'am' ? 'የፒዲኤፍ ጥራት / መጠን (PDF Compression & Quality)' : 'PDF Compression / File Size'}:
-              </span>
-              <span className="font-mono text-emerald-400 font-bold">
-                {settings.quality || 78}% (~{(settings.quality || 78) <= 72 ? '170 KB' : (settings.quality || 78) <= 80 ? '210 KB' : '260 KB'})
-              </span>
-            </div>
-            <input
-              type="range"
-              min="65"
-              max="95"
-              step="1"
-              value={settings.quality || 78}
-              onChange={(e) => setSettings(prev => ({ ...prev, quality: parseInt(e.target.value, 10) }))}
-              className="w-full accent-emerald-500 bg-zinc-800"
-            />
-            <div className="flex justify-between text-[10px] text-zinc-500">
-              <span>Ultra Light (~160 KB)</span>
-              <span>Light (~210 KB) [Recommended]</span>
-              <span>High Quality (~270 KB)</span>
-              <span>Max (~380 KB)</span>
-            </div>
           </div>
         </div>
       </div>
