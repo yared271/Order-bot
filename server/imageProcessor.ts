@@ -166,7 +166,7 @@ export async function processCardPair({
   try {
     const personName = await extractNameFromCard(actualFront);
     if (personName && personName.length > 2) {
-      baseFilename = `${personName}_${orientation}`;
+      baseFilename = `${personName}`;
     }
   } catch (e) {
     // Keep fallback baseFilename
@@ -278,7 +278,17 @@ export async function processBatchCards({
     .toBuffer();
 
   const timestamp = Date.now();
-  const baseFilename = `pub_${count}ids_${orientation}_${timestamp}`;
+  let baseFilename = `pub_${count}ids_${orientation}_${timestamp}`;
+
+  // Automatically read English Full Name from first Front ID card
+  try {
+    const personName = await extractNameFromCard(fronts[0]);
+    if (personName && personName.length > 2) {
+      baseFilename = count === 1 ? `${personName}` : `${personName}_and_${count - 1}_others`;
+    }
+  } catch (e) {
+    // Keep fallback baseFilename
+  }
 
   if (settings.format === 'PDF') {
     const pdfDoc = await PDFDocument.create();

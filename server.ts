@@ -144,9 +144,35 @@ app.post('/api/bot/toggle-polling', async (req, res) => {
   }
 });
 
-// Get logs
-app.get('/api/bot/logs', (req, res) => {
-  res.json({ ok: true, logs: botManager.getLogs() });
+// Get user session and settings
+app.get('/api/bot/session/:chatId', (req, res) => {
+  try {
+    const session = botManager.getSession(req.params.chatId);
+    res.json({
+      ok: true,
+      chatId: session.chatId,
+      language: session.language,
+      settings: session.settings,
+      frontsCount: session.fronts.length,
+      backsCount: session.backs.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Update user session settings
+app.post('/api/bot/session/:chatId/settings', (req, res) => {
+  try {
+    const session = botManager.updateSessionSettings(req.params.chatId, req.body.settings || req.body);
+    res.json({
+      ok: true,
+      chatId: session.chatId,
+      settings: session.settings
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Send test message to Telegram chat
@@ -354,19 +380,29 @@ app.post(
 
 // Serve static assets and Vite middlewares
 async function startServer() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const distPath = path.join(__dirname, 'dist');
+  const hasDist = fs.existsSync(distPath);
+  const isProd = process.env.NODE_ENV === 'production' || hasDist;
 
   if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn('Vite middleware failed, falling back to static build:', e);
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'dist/index.html'));
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 

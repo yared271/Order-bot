@@ -48,7 +48,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     setWebhookUrlInput(currentOrigin);
     checkStatus();
+    loadSessionSettings();
   }, []);
+
+  const loadSessionSettings = async () => {
+    try {
+      const res = await fetch('/api/bot/session/6689699811');
+      const data = await res.json();
+      if (data.ok && data.settings) {
+        setSettings(data.settings);
+      }
+    } catch (e) {
+      console.error('Failed to load bot session settings:', e);
+    }
+  };
 
   const checkStatus = async () => {
     try {
@@ -180,8 +193,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const handleToggleFormat = () => {
     const nextFmt = settings.format === 'JPG' ? 'PDF' : 'JPG';
-    setSettings(prev => ({ ...prev, format: nextFmt }));
-    triggerSave(`Format ${nextFmt}`);
+    const updated = { ...settings, format: nextFmt as 'PDF' | 'JPG' };
+    setSettings(updated);
+    triggerSave(`Format set to ${nextFmt}`, updated);
   };
 
   const handleCycleQuality = () => {
@@ -189,12 +203,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     const curQ = settings.quality || 78;
     const curIdx = qLevels.indexOf(curQ);
     const nextQ = qLevels[(curIdx + 1) % qLevels.length];
-    setSettings(prev => ({ ...prev, quality: nextQ }));
-    triggerSave(`PDF Quality ${nextQ}% (~${nextQ <= 75 ? '170' : nextQ <= 80 ? '210' : '260'} KB)`);
+    const updated = { ...settings, quality: nextQ };
+    setSettings(updated);
+    triggerSave(`PDF Quality ${nextQ}% (~${nextQ <= 75 ? '170' : nextQ <= 80 ? '210' : '260'} KB)`, updated);
   };
 
   const handleResetDefaults = () => {
-    setSettings({
+    const defs: LayoutSettings = {
       mode: 'DEFAULT',
       widthCm: 8.95,
       heightCm: 5.70,
@@ -206,12 +221,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       format: 'PDF',
       dpi: 300,
       quality: 78
-    });
-    triggerSave('Reset to defaults');
+    };
+    setSettings(defs);
+    triggerSave('Reset to defaults', defs);
   };
 
-  const triggerSave = (msg: string) => {
+  const triggerSave = (msg: string, updatedSettings?: LayoutSettings) => {
+    const sToSave = updatedSettings || settings;
     setSavedNotice(msg);
+    fetch('/api/bot/session/6689699811/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: sToSave })
+    }).catch(err => console.error('Failed to save session settings via API:', err));
     setTimeout(() => setSavedNotice(null), 3000);
   };
 

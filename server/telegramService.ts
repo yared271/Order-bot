@@ -161,6 +161,14 @@ export class TelegramBotManager {
     return session;
   }
 
+  public updateSessionSettings(chatId: string | number, settingsPartial: Partial<LayoutSettings>): UserSession {
+    const session = this.getSession(chatId);
+    session.settings = { ...session.settings, ...settingsPartial };
+    this.persistSession(session);
+    this.addLog('info', 'System', 'Session Settings Updated', `Chat: ${chatId}, Format: ${session.settings.format}`);
+    return session;
+  }
+
   public updateConfig(newToken?: string, newChatId?: string) {
     if (newToken && newToken !== this.token) {
       this.token = newToken.trim();
@@ -300,6 +308,7 @@ ${isAm ? '\n💡 ለማስተካከል ከታች ያሉትን ቁልፎች ይ�
 
   private getSettingsInlineKeyboard(settings: LayoutSettings) {
     const q = settings.quality || 78;
+    const formatBtnLabel = settings.format === 'JPG' ? '🖼️ Format: JPG (Active)' : '📄 Format: PDF (Active)';
     return {
       inline_keyboard: [
         [{ text: `Mode: ✅ ${settings.mode === 'DEFAULT' ? 'Default' : settings.mode}`, callback_data: 'cfg:toggle_mode' }],
@@ -312,8 +321,12 @@ ${isAm ? '\n💡 ለማስተካከል ከታች ያሉትን ቁልፎች ይ�
           { text: `⬆️ Top Margin (${settings.topMarginPx}px)`, callback_data: 'cfg:cycle_top_margin' }
         ],
         [
-          { text: `📄 Format: ${settings.format}`, callback_data: 'cfg:toggle_format' },
-          { text: `📦 PDF Size: ${q}%`, callback_data: 'cfg:cycle_quality' }
+          { text: formatBtnLabel, callback_data: 'cfg:toggle_format' },
+          { text: `📦 Quality: ${q}%`, callback_data: 'cfg:cycle_quality' }
+        ],
+        [
+          { text: '📄 Set PDF', callback_data: 'cfg:set_pdf' },
+          { text: '🖼️ Set JPG', callback_data: 'cfg:set_jpg' }
         ],
         [
           { text: '💾 Save Settings', callback_data: 'cfg:save' },
@@ -391,14 +404,16 @@ High-speed 300 DPI print generator is ready!`;
 • የተላከ የፊት ገጽ (Front): ${fCount}
 • የተላከ የጀርባ ገጽ (Back): ${bCount}
 • የተሟላ መታወቂያ (Ready IDs): ${Math.min(fCount, bCount)}
+• Format: ${session.settings.format}
 
-${fCount > bCount ? '⚠️ የጀርባ ገጽ (Back) ፎቶ ይጠበቃል!' : fCount === bCount && fCount > 0 ? '✅ ለማተም ዝግጁ ነው! /pdf ወይም 📄 Print ይጫኑ::' : '📸 እባክዎ የመታወቂያ ፎቶ ይላኩ::'}`
+${fCount > bCount ? '⚠️ የጀርባ ገጽ (Back) ፎቶ ይጠበቃል!' : fCount === bCount && fCount > 0 ? `✅ ለማተም ዝግጁ ነው! /print (${session.settings.format}) ወይም 📄 Print ይጫኑ::` : '📸 እባክዎ የመታወቂያ ፎቶ ይላኩ::'}`
         : `📋 Current Status:
 • Front photos: ${fCount}
 • Back photos: ${bCount}
 • Complete IDs: ${Math.min(fCount, bCount)}
+• Format: ${session.settings.format}
 
-${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCount > 0 ? '✅ Ready to print! Tap /pdf or 📄 Print.' : '📸 Please send ID photo.'}`;
+${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCount > 0 ? `✅ Ready to print! Tap /print (${session.settings.format}) or 📄 Print.` : '📸 Please send ID photo.'}`;
 
       await this.callApi('sendMessage', {
         chat_id: chatId,
@@ -446,7 +461,29 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       return;
     }
 
-    if (text === '/pdf' || text === '/print' || text === '📄 Print') {
+    if (text === '/pdf') {
+      session.settings.format = 'PDF';
+      this.persistSession(session);
+      await this.callApi('sendMessage', {
+        chat_id: chatId,
+        text: session.language === 'am' ? '📄 Format ወደ PDF ተቀይሯል!' : '📄 Format set to PDF!'
+      });
+      await this.promptOrientation(chatId, session);
+      return;
+    }
+
+    if (text === '/jpg') {
+      session.settings.format = 'JPG';
+      this.persistSession(session);
+      await this.callApi('sendMessage', {
+        chat_id: chatId,
+        text: session.language === 'am' ? '🖼️ Format ወደ JPG ተቀይሯል!' : '🖼️ Format set to JPG!'
+      });
+      await this.promptOrientation(chatId, session);
+      return;
+    }
+
+    if (text === '/print' || text === '📄 Print') {
       await this.promptOrientation(chatId, session);
       return;
     }
@@ -484,7 +521,7 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
 
     if (isFront) {
       this.addLog('success', user, 'Photo Received', `Front #${newF} detected & stored`, chatId);
-      const text = `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs. /pdf`;
+      const text = `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`;
       await this.callApi('sendMessage', {
         chat_id: chatId,
         text,
@@ -492,7 +529,7 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       });
     } else {
       this.addLog('success', user, 'Photo Received', `Back #${newB} detected & stored`, chatId);
-      const text = `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs. /pdf`;
+      const text = `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`;
       await this.callApi('sendMessage', {
         chat_id: chatId,
         text,
@@ -523,14 +560,14 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       this.addLog('success', user, 'Document Photo Received', `Front #${newF} detected & stored`, chatId);
       await this.callApi('sendMessage', {
         chat_id: chatId,
-        text: `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs. /pdf`,
+        text: `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`,
         reply_markup: this.getReplyKeyboard(session.language)
       });
     } else {
       this.addLog('success', user, 'Document Photo Received', `Back #${newB} detected & stored`, chatId);
       await this.callApi('sendMessage', {
         chat_id: chatId,
-        text: `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs. /pdf`,
+        text: `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`,
         reply_markup: this.getReplyKeyboard(session.language)
       });
     }
@@ -593,7 +630,7 @@ Flip + Reverse = mirror images + swap sides`;
     }
 
     if (data.startsWith('cfg:')) {
-      await this.handleConfigCallback(chatId, messageId, data, session);
+      await this.handleConfigCallback(chatId, messageId, data, session, cb.id);
       return;
     }
 
@@ -619,7 +656,7 @@ Flip + Reverse = mirror images + swap sides`;
     }
   }
 
-  private async handleConfigCallback(chatId: string, messageId: number, data: string, session: UserSession) {
+  private async handleConfigCallback(chatId: string, messageId: number, data: string, session: UserSession, callbackQueryId?: string) {
     const s = session.settings;
 
     if (data === 'cfg:toggle_mode') {
@@ -657,6 +694,10 @@ Flip + Reverse = mirror images + swap sides`;
       s.topMarginPx = margins[(curIdx + 1) % margins.length];
     } else if (data === 'cfg:toggle_format') {
       s.format = s.format === 'JPG' ? 'PDF' : 'JPG';
+    } else if (data === 'cfg:set_pdf') {
+      s.format = 'PDF';
+    } else if (data === 'cfg:set_jpg') {
+      s.format = 'JPG';
     } else if (data === 'cfg:cycle_quality') {
       const qLevels = [72, 78, 85, 90];
       const curQ = s.quality || 78;
