@@ -22,7 +22,7 @@ export default function App() {
     downGapLevel: 4,
     topMarginPx: 15,
     sideMarginPx: 20,
-    format: 'PDF',
+    format: 'JPG',
     dpi: 300,
     quality: 78
   });

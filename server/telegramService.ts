@@ -292,8 +292,6 @@ export class TelegramBotManager {
 
   private getSettingsText(settings: LayoutSettings, lang: 'am' | 'en'): string {
     const isAm = lang === 'am';
-    const q = settings.quality || 78;
-    const qLabel = q <= 72 ? 'Super Light (~170 KB)' : q <= 78 ? 'Light (~210 KB)' : q <= 85 ? 'Standard (~260 KB)' : 'Maximum (~350 KB)';
     return `⚙️ Layout Settings (Auto-Saved)
 
 📍 Mode: ${settings.mode}
@@ -301,14 +299,11 @@ export class TelegramBotManager {
 ↔️ Gap (Sides): ${settings.sideGapPx === 0 ? 'None (0px)' : settings.sideGapPx === 54 ? 'small (54px)' : `${settings.sideGapPx}px`}
 ↕️ Gap (Down): Level ${settings.downGapLevel} (${settings.downGapPx}px)
 ⬆️ Margin Top: ${settings.topMarginPx}px
-📄 Format: ${settings.format}
-📦 PDF Quality: ${q}% [${qLabel}]
+🖼️ Format: JPG High-Resolution
 ${isAm ? '\n💡 ለማስተካከል ከታች ያሉትን ቁልፎች ይጠቀሙ:' : ''}`;
   }
 
   private getSettingsInlineKeyboard(settings: LayoutSettings) {
-    const q = settings.quality || 78;
-    const formatBtnLabel = settings.format === 'JPG' ? '🖼️ Format: JPG (Active)' : '📄 Format: PDF (Active)';
     return {
       inline_keyboard: [
         [{ text: `Mode: ✅ ${settings.mode === 'DEFAULT' ? 'Default' : settings.mode}`, callback_data: 'cfg:toggle_mode' }],
@@ -319,14 +314,6 @@ ${isAm ? '\n💡 ለማስተካከል ከታች ያሉትን ቁልፎች ይ�
         [
           { text: `↔️ Side Gap (${settings.sideGapPx}px)`, callback_data: 'cfg:cycle_side_gap' },
           { text: `⬆️ Top Margin (${settings.topMarginPx}px)`, callback_data: 'cfg:cycle_top_margin' }
-        ],
-        [
-          { text: formatBtnLabel, callback_data: 'cfg:toggle_format' },
-          { text: `📦 Quality: ${q}%`, callback_data: 'cfg:cycle_quality' }
-        ],
-        [
-          { text: '📄 Set PDF', callback_data: 'cfg:set_pdf' },
-          { text: '🖼️ Set JPG', callback_data: 'cfg:set_jpg' }
         ],
         [
           { text: '💾 Save Settings', callback_data: 'cfg:save' },
@@ -551,26 +538,8 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       });
     } else {
       this.addLog('success', user, 'Photo Received', `Back #${newB} detected & stored`, chatId);
-      const text = session.language === 'am'
-        ? `✅ የጀርባ ገጽ (BACK) #${newB} ተቀብለናል!\n\n🎉 1 ሙሉ መታወቂያ ተሟልቷል (Front + Back)!\nFormat: ${session.settings.format}\nከታች ባሉት ቁልፎች ማተም ወይም Reset ማድረግ ይችላሉ:`
-        : `✅ BACK #${newB} photo received!\n\n🎉 1 Complete ID Card Ready (Front + Back)!\nFormat: ${session.settings.format}\nUse options below to print or reset:`;
-      
-      const inlineButtons = {
-        inline_keyboard: [
-          [
-            { text: `🖨️ Print Output (${session.settings.format})`, callback_data: 'orient:normal' }
-          ],
-          [
-            { text: '🔄 Reset & Clear', callback_data: 'action:reset' }
-          ]
-        ]
-      };
-
-      await this.callApi('sendMessage', {
-        chat_id: chatId,
-        text,
-        reply_markup: inlineButtons
-      });
+      // Directly prompt orientation choices (Normal, Reverse, Flip + Reverse) for instant JPG output
+      await this.promptOrientation(chatId, session);
     }
   }
 
@@ -603,30 +572,16 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       });
     } else {
       this.addLog('success', user, 'Document Photo Received', `Back #${newB} detected & stored`, chatId);
-      const text = session.language === 'am'
-        ? `✅ የጀርባ ገጽ (BACK) #${newB} ተቀብለናል!\n\n🎉 1 ሙሉ መታወቂያ ተሟልቷል (Front + Back)!\nFormat: ${session.settings.format}\nከታች ባሉት ቁልፎች ማተም ወይም Reset ማድረግ ይችላሉ:`
-        : `✅ BACK #${newB} photo received!\n\n🎉 1 Complete ID Card Ready (Front + Back)!\nFormat: ${session.settings.format}\nUse options below to print or reset:`;
-
-      const inlineButtons = {
-        inline_keyboard: [
-          [
-            { text: `🖨️ Print Output (${session.settings.format})`, callback_data: 'orient:normal' }
-          ],
-          [
-            { text: '🔄 Reset & Clear', callback_data: 'action:reset' }
-          ]
-        ]
-      };
-
-      await this.callApi('sendMessage', {
-        chat_id: chatId,
-        text,
-        reply_markup: inlineButtons
-      });
+      // Directly prompt orientation choices (Normal, Reverse, Flip + Reverse) for instant JPG output
+      await this.promptOrientation(chatId, session);
     }
   }
 
   private async promptOrientation(chatId: string, session: UserSession) {
+    // Strictly enforce JPG format
+    session.settings.format = 'JPG';
+    this.persistSession(session);
+
     const count = Math.min(session.fronts.length, session.backs.length);
     if (count === 0) {
       const msg = session.language === 'am'
@@ -644,21 +599,24 @@ Or test using sample ID:`;
       return;
     }
 
-    const promptText = `📋 Ready to generate high-quality ${session.settings.format} with ${count} ID(s).
+    const promptText = session.language === 'am'
+      ? `🎉 ${count} ሙሉ መታወቂያ ተሟልቷል (Front + Back)!
+🖼️ Format: JPG (300 DPI)
 
-Choose orientation:
-Normal = front left, back right
-Reverse = back left, front right
-Flip + Reverse = mirror images + swap sides`;
+እባክዎ የማተሚያ አቅጣጫ ይምረጡ:`
+      : `🎉 ${count} Complete ID Card Ready (Front + Back)!
+🖼️ Format: JPG (300 DPI)
+
+Choose print orientation:`;
 
     const inlineKeyboard = {
       inline_keyboard: [
         [
-          { text: '📄 Normal', callback_data: 'orient:normal' },
-          { text: 'Reverse', callback_data: 'orient:reverse' }
+          { text: '📄 Normal (መደበኛ)', callback_data: 'orient:normal' },
+          { text: 'Reverse (ተገልባጭ)', callback_data: 'orient:reverse' }
         ],
         [
-          { text: '🔄 Flip + Reverse', callback_data: 'orient:flip_reverse' }
+          { text: '🔄 Flip + Reverse (የመስታወት)', callback_data: 'orient:flip_reverse' }
         ]
       ]
     };

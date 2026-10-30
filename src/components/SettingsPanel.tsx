@@ -218,7 +218,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       downGapLevel: 4,
       topMarginPx: 15,
       sideMarginPx: 20,
-      format: 'PDF',
+      format: 'JPG',
       dpi: 300,
       quality: 78
     };
@@ -290,14 +290,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span className="font-semibold text-white">{settings.topMarginPx}px</span>
           </div>
           <div className="flex items-center gap-2">
-            <span>📄 Format:</span>
-            <span className="font-semibold text-white">{settings.format}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span>📦 PDF Size / Quality:</span>
-            <span className="font-semibold text-emerald-400">
-              {settings.quality || 78}% ({(settings.quality || 78) <= 72 ? 'Super Light ~170 KB' : (settings.quality || 78) <= 80 ? 'Light ~210 KB' : 'Standard ~260 KB'})
-            </span>
+            <span>🖼️ Format:</span>
+            <span className="font-semibold text-emerald-400">JPG (High Resolution 300 DPI)</span>
           </div>
         </div>
 
