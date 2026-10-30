@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import { TelegramBotManager } from './server/telegramService.js';
@@ -381,7 +382,20 @@ app.post(
 // Serve static assets and Vite middlewares
 async function startServer() {
   const distPath = path.join(__dirname, 'dist');
-  const hasDist = fs.existsSync(distPath);
+  const indexHtmlPath = path.join(distPath, 'index.html');
+
+  // Auto-build dist if missing on launch
+  if (!fs.existsSync(indexHtmlPath)) {
+    console.log('⚠️ dist/index.html not found. Building static frontend with Vite...');
+    try {
+      execSync('npx vite build', { stdio: 'inherit' });
+      console.log('✅ Auto-build completed successfully!');
+    } catch (err: any) {
+      console.error('❌ Auto-build failed:', err.message);
+    }
+  }
+
+  const hasDist = fs.existsSync(indexHtmlPath);
   const isProd = process.env.NODE_ENV === 'production' || hasDist;
 
   if (!isProd) {
@@ -394,16 +408,24 @@ async function startServer() {
       app.use(vite.middlewares);
     } catch (e) {
       console.warn('Vite middleware failed, falling back to static build:', e);
-      app.use(express.static(distPath));
-      app.get('*', (req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
+      if (fs.existsSync(indexHtmlPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res) => {
+          res.sendFile(indexHtmlPath);
+        });
+      }
     }
   } else {
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    if (fs.existsSync(indexHtmlPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(indexHtmlPath);
+      });
+    } else {
+      app.get('*', (req, res) => {
+        res.send('<h1>Order Bot Server is Active!</h1><p>Telegram Bot is online and listening for messages.</p>');
+      });
+    }
   }
 
   app.listen(PORT, '0.0.0.0', () => {

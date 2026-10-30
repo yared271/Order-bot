@@ -365,6 +365,11 @@ ${isAm ? '\n💡 ለማስተካከል ከታች ያሉትን ቁልፎች ይ�
     this.addLog('info', user, 'Message Received', text, chatId);
 
     if (text === '/start' || text === '🚀 Start') {
+      // Clear session data on start to ensure clean state
+      session.fronts = [];
+      session.backs = [];
+      this.persistSession(session);
+
       const welcome = session.language === 'am'
         ? `👋 ሰላም ${user}! ወደ orderbot እንኳን ደህና መጡ!
 
@@ -429,7 +434,7 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       this.persistSession(session);
       await this.callApi('sendMessage', {
         chat_id: chatId,
-        text: '✅ Reset done. Your data cleared.\n\nSend new images to start over!',
+        text: '✅ Reset done. Your session data has been cleared.\n\nSend new images to start over!',
         reply_markup: this.getReplyKeyboard(session.language)
       });
       return;
@@ -499,14 +504,29 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
     });
   }
 
+  private async determineCardSide(buffer: Buffer, session: UserSession): Promise<'front' | 'back'> {
+    const fCount = session.fronts.length;
+    const bCount = session.backs.length;
+
+    // Rule 1: If 1 Front is waiting and 0 Backs exist for current ID,
+    // this 2nd uploaded image is expected to be BACK to complete the pair!
+    if (fCount > bCount) {
+      return 'back';
+    }
+
+    // Rule 2: If fCount === bCount, user is starting a new card pair.
+    // Default to 'front' unless detectCardSide strongly identifies 'back'
+    const detected = await detectCardSide(buffer);
+    return detected;
+  }
+
   private async handlePhotoUpload(chatId: string, user: string, photos: any[], session: UserSession) {
     const bestPhoto = photos[photos.length - 1];
     const fileId = bestPhoto.file_id;
     const buffer = await this.downloadTelegramFile(fileId);
 
-    // Automatically detect whether the image is FRONT or BACK
-    const detectedSide = await detectCardSide(buffer);
-    const isFront = detectedSide === 'front';
+    const side = await this.determineCardSide(buffer, session);
+    const isFront = side === 'front';
 
     if (isFront) {
       session.fronts.push(buffer);
@@ -521,7 +541,9 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
 
     if (isFront) {
       this.addLog('success', user, 'Photo Received', `Front #${newF} detected & stored`, chatId);
-      const text = `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`;
+      const text = session.language === 'am'
+        ? `✅ የፊት ገጽ (FRONT) #${newF} ተቀብለናል!\n\n📸 አሁን የጀርባ ገጽ (BACK) ፎቶ ይላኩ...`
+        : `✅ FRONT #${newF} photo received!\n\n📸 Now send the BACK photo...`;
       await this.callApi('sendMessage', {
         chat_id: chatId,
         text,
@@ -529,11 +551,25 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
       });
     } else {
       this.addLog('success', user, 'Photo Received', `Back #${newB} detected & stored`, chatId);
-      const text = `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`;
+      const text = session.language === 'am'
+        ? `✅ የጀርባ ገጽ (BACK) #${newB} ተቀብለናል!\n\n🎉 1 ሙሉ መታወቂያ ተሟልቷል (Front + Back)!\nFormat: ${session.settings.format}\nከታች ባሉት ቁልፎች ማተም ወይም Reset ማድረግ ይችላሉ:`
+        : `✅ BACK #${newB} photo received!\n\n🎉 1 Complete ID Card Ready (Front + Back)!\nFormat: ${session.settings.format}\nUse options below to print or reset:`;
+      
+      const inlineButtons = {
+        inline_keyboard: [
+          [
+            { text: `🖨️ Print Output (${session.settings.format})`, callback_data: 'orient:normal' }
+          ],
+          [
+            { text: '🔄 Reset & Clear', callback_data: 'action:reset' }
+          ]
+        ]
+      };
+
       await this.callApi('sendMessage', {
         chat_id: chatId,
         text,
-        reply_markup: this.getReplyKeyboard(session.language)
+        reply_markup: inlineButtons
       });
     }
   }
@@ -541,9 +577,8 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
   private async handleDocumentPhotoUpload(chatId: string, user: string, doc: any, session: UserSession) {
     const buffer = await this.downloadTelegramFile(doc.file_id);
 
-    // Automatically detect whether the document image is FRONT or BACK
-    const detectedSide = await detectCardSide(buffer);
-    const isFront = detectedSide === 'front';
+    const side = await this.determineCardSide(buffer, session);
+    const isFront = side === 'front';
 
     if (isFront) {
       session.fronts.push(buffer);
@@ -558,17 +593,35 @@ ${fCount > bCount ? '⚠️ Waiting for BACK photo!' : fCount === bCount && fCou
 
     if (isFront) {
       this.addLog('success', user, 'Document Photo Received', `Front #${newF} detected & stored`, chatId);
+      const text = session.language === 'am'
+        ? `✅ የፊት ገጽ (FRONT) #${newF} ተቀብለናል!\n\n📸 አሁን የጀርባ ገጽ (BACK) ፎቶ ይላኩ...`
+        : `✅ FRONT #${newF} photo received!\n\n📸 Now send the BACK photo...`;
       await this.callApi('sendMessage', {
         chat_id: chatId,
-        text: `✅ Front (${newF}/${newF})\n\nNo. FRONT #${newF}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`,
+        text,
         reply_markup: this.getReplyKeyboard(session.language)
       });
     } else {
       this.addLog('success', user, 'Document Photo Received', `Back #${newB} detected & stored`, chatId);
+      const text = session.language === 'am'
+        ? `✅ የጀርባ ገጽ (BACK) #${newB} ተቀብለናል!\n\n🎉 1 ሙሉ መታወቂያ ተሟልቷል (Front + Back)!\nFormat: ${session.settings.format}\nከታች ባሉት ቁልፎች ማተም ወይም Reset ማድረግ ይችላሉ:`
+        : `✅ BACK #${newB} photo received!\n\n🎉 1 Complete ID Card Ready (Front + Back)!\nFormat: ${session.settings.format}\nUse options below to print or reset:`;
+
+      const inlineButtons = {
+        inline_keyboard: [
+          [
+            { text: `🖨️ Print Output (${session.settings.format})`, callback_data: 'orient:normal' }
+          ],
+          [
+            { text: '🔄 Reset & Clear', callback_data: 'action:reset' }
+          ]
+        ]
+      };
+
       await this.callApi('sendMessage', {
         chat_id: chatId,
-        text: `✅ Back (${newB}/${newB})\n\nNo. BACK #${newB}. Total: ${newF} fronts, ${newB} backs.\nFormat: ${session.settings.format}\nPress /print or /pdf or /jpg to generate output.`,
-        reply_markup: this.getReplyKeyboard(session.language)
+        text,
+        reply_markup: inlineButtons
       });
     }
   }
